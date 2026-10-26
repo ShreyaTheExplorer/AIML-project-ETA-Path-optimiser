@@ -1,0 +1,48 @@
+# Approximate coordinates of well-known Pune and PCMC localities. Must be spot-checked on a map.
+name,lat,lon,city
+Shivajinagar,18.5204,73.8567,Pune
+Kothrud,18.5074,73.8077,Pune
+Katraj,18.4529,73.8616,Pune
+Hinjewadi,18.5912,73.7389,PCMC
+Hadapsar,18.5018,73.9260,Pune
+Pune Station,18.5286,73.8741,Pune
+Chinchwad,18.6279,73.7956,PCMC
+Baner,18.5590,73.7868,Pune
+Wakad,18.5975,73.7617,PCMC
+Viman Nagar,18.5679,73.9143,Pune
+Kharadi,18.5529,73.9380,Pune
+Koregaon Park,18.5362,73.8938,Pune
+Aundh,18.5642,73.7769,Pune
+Magarpatta,18.5089,73.9260,Pune
+Pimpri,18.6208,73.7986,PCMC
+Sinhagad Road,18.4667,73.8167,Pune
+Deccan Gymkhana,18.5186,73.8415,Pune
+Swargate,18.5018,73.8586,Pune
+Camp (MG Road),18.5170,73.8780,Pune
+Karve Nagar,18.4905,73.8211,Pune
+Warje,18.4789,73.8020,Pune
+Bavdhan,18.5158,73.7705,Pune
+Pashan,18.5416,73.7928,Pune
+Balewadi,18.5760,73.7730,Pune
+Mahalunge,18.5724,73.7460,Pune
+Pimple Saudagar,18.5987,73.7978,PCMC
+Pimple Gurav,18.5870,73.8160,PCMC
+Pimple Nilakh,18.5732,73.7980,PCMC
+Sangvi,18.5700,73.8250,PCMC
+Dapodi,18.5780,73.8340,PCMC
+Kasarwadi,18.5960,73.8230,PCMC
+Akurdi,18.6490,73.7707,PCMC
+Nigdi,18.6540,73.7650,PCMC
+Ravet,18.6430,73.7430,PCMC
+Bhosari,18.6225,73.8436,PCMC
+Moshi,18.6750,73.8460,PCMC
+Kalyani Nagar,18.5463,73.9034,Pune
+Yerawada,18.5529,73.8797,Pune
+Fatima Nagar,18.5060,73.8950,Pune
+Wanowrie,18.4890,73.8970,Pune
+Kondhwa,18.4730,73.8940,Pune
+Bibvewadi,18.4710,73.8640,Pune
+Dhankawadi,18.4680,73.8520,Pune
+Wadgaon Sheri,18.5510,73.9210,Pune
+Chandan Nagar,18.5580,73.9310,Pune
+Wagholi,18.5810,73.9820,Pune

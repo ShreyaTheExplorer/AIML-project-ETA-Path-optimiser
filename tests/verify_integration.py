@@ -2,7 +2,12 @@
 import requests
 import json
 
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 API_URL = "http://127.0.0.1:8000"
+
+future_departure = (datetime.now(ZoneInfo("Asia/Kolkata")) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
 
 # Test health
 r = requests.get(f"{API_URL}/health", timeout=5)
@@ -26,9 +31,10 @@ payload = {
         {"id": "Kothrud", "lat": 18.5074, "lon": 73.8077, "weather": "Sunny", "traffic": "Medium", "multiple_deliveries": 0},
         {"id": "Aundh", "lat": 18.5642, "lon": 73.7769, "weather": "Sunny", "traffic": "Medium", "multiple_deliveries": 0},
     ],
-    "departure_time": "2026-10-26T11:00:00",
+    "departure_time": future_departure,
     "algorithm": "held_karp",
 }
+
 
 r = requests.post(f"{API_URL}/optimize", json=payload, timeout=30)
 print(f"\n=== Held-Karp Optimization ===")

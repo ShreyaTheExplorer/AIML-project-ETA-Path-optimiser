@@ -1,12 +1,12 @@
 """Tests for frontend helpers and invariants."""
 
-from frontend.app import LANDMARKS, build_map
+from frontend.app import GAZETTEER, LANDMARKS, build_map
 
 # Pune / Indian city bounding box (matches the actual landmarks)
 PUNE_LAT_MIN = 18.40
-PUNE_LAT_MAX = 18.65
-PUNE_LON_MIN = 73.70
-PUNE_LON_MAX = 73.95
+PUNE_LAT_MAX = 18.68
+PUNE_LON_MIN = 73.68
+PUNE_LON_MAX = 73.99
 
 
 def test_landmarks_count_and_uniqueness():
@@ -19,6 +19,26 @@ def test_landmarks_within_pune_box():
     for lm in LANDMARKS:
         assert PUNE_LAT_MIN <= lm["lat"] <= PUNE_LAT_MAX, f"{lm['id']} lat out of bounds"
         assert PUNE_LON_MIN <= lm["lon"] <= PUNE_LON_MAX, f"{lm['id']} lon out of bounds"
+
+
+def test_gazetteer_loaded_and_valid():
+    assert len(GAZETTEER) >= 40, f"Expected at least 40 localities, got {len(GAZETTEER)}"
+    required = [
+        "Kothrud", "Katraj", "Hinjewadi", "Hadapsar", "Shivajinagar",
+        "Pune Station", "Chinchwad", "Baner", "Wakad", "Viman Nagar", "Kharadi"
+    ]
+    for req in required:
+        assert req in GAZETTEER, f"Missing required locality: {req}"
+        loc = GAZETTEER[req]
+        assert PUNE_LAT_MIN <= loc["lat"] <= PUNE_LAT_MAX, f"{req} lat out of bounds"
+        assert PUNE_LON_MIN <= loc["lon"] <= PUNE_LON_MAX, f"{req} lon out of bounds"
+
+
+def test_central_pune_default_coordinates():
+    assert "Shivajinagar" in GAZETTEER
+    loc = GAZETTEER["Shivajinagar"]
+    assert abs(loc["lat"] - 18.5204) < 1e-4
+    assert abs(loc["lon"] - 73.8567) < 1e-4
 
 
 def test_build_map_creates_folium_map():
@@ -49,5 +69,6 @@ def test_app_test_initial_load():
         "Local Optima Demo",
         "Model Comparison",
     ]
+
 
 

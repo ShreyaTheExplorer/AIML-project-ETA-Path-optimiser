@@ -1,7 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+IST_ZONE = ZoneInfo("Asia/Kolkata")
+
+
+def get_current_ist_time() -> datetime:
+    """Return current datetime in Asia/Kolkata (IST). Hookable for unit tests."""
+    return datetime.now(IST_ZONE)
 
 
 Weather = Literal[
@@ -143,22 +151,40 @@ class OptimizeRequest(BaseModel):
     @field_validator("departure_time", mode="before")
     @classmethod
     def validate_departure_time(cls, value):
-        if isinstance(value, datetime):
-            return value
-
-        if not isinstance(value, str):
+        if isinstance(value, str):
+            value_str = value.strip()
+            if not value_str:
+                raise ValueError("departure_time cannot be empty.")
+            try:
+                parsed = datetime.fromisoformat(
+                    value_str.replace("Z", "+00:00")
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    "departure_time must be a valid ISO-format datetime."
+                ) from exc
+        elif isinstance(value, datetime):
+            parsed = value
+        else:
             raise ValueError(
                 "departure_time must be an ISO-format datetime string."
             )
 
-        try:
-            return datetime.fromisoformat(
-                value.replace("Z", "+00:00")
-            )
-        except ValueError as exc:
+        # Localize or convert to Asia/Kolkata (IST)
+        if parsed.tzinfo is None:
+            dt_ist = parsed.replace(tzinfo=IST_ZONE)
+        else:
+            dt_ist = parsed.astimezone(IST_ZONE)
+
+        now_ist = get_current_ist_time()
+        # 5-minute grace window
+        if dt_ist < (now_ist - timedelta(minutes=5)):
             raise ValueError(
-                "departure_time must be a valid ISO-format datetime."
-            ) from exc
+                f"departure_time cannot be in the past ({dt_ist.strftime('%Y-%m-%d %H:%M:%S')} IST). "
+                f"Must be at or after the current time in Asia/Kolkata ({now_ist.strftime('%Y-%m-%d %H:%M:%S')} IST, 5-minute grace window)."
+            )
+
+        return parsed
 
     @field_validator("stops")
     @classmethod

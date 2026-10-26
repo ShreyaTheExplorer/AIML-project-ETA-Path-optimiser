@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -47,7 +47,7 @@ BASE_REQUEST = {
             "multiple_deliveries": 0,
         },
     ],
-    "departure_time": "2026-10-24T11:00:00",
+    "departure_time": (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT11:00:00"),
     "algorithm": "exact",
 }
 
@@ -382,3 +382,91 @@ def test_optimize_response_includes_distance_warnings(monkeypatch):
     assert data["distance_warnings"]["count"] >= 0
     assert data["distance_warnings"]["training_range_km"] == [1.47, 20.97]
     assert "legs" in data["distance_warnings"]
+
+
+# ---------------------------------------------------------------------------
+# Departure Time Validation Tests (Mocked Clock)
+# ---------------------------------------------------------------------------
+
+def test_past_date_rejected(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    mock_now = datetime(2026, 10, 26, 15, 0, 0, tzinfo=ist)
+    monkeypatch.setattr("api.schemas.get_current_ist_time", lambda: mock_now)
+
+    req = {**BASE_REQUEST, "departure_time": "2026-10-25T15:00:00"}
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 422
+    assert "departure_time cannot be in the past" in resp.text
+
+
+def test_today_past_time_rejected(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    # Current time: 15:00 IST
+    mock_now = datetime(2026, 10, 26, 15, 0, 0, tzinfo=ist)
+    monkeypatch.setattr("api.schemas.get_current_ist_time", lambda: mock_now)
+
+    # 15 minutes in past (outside 5-min grace window)
+    req = {**BASE_REQUEST, "departure_time": "2026-10-26T14:45:00"}
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 422
+    assert "departure_time cannot be in the past" in resp.text
+
+
+def test_today_future_time_accepted(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    mock_now = datetime(2026, 10, 26, 15, 0, 0, tzinfo=ist)
+    monkeypatch.setattr("api.schemas.get_current_ist_time", lambda: mock_now)
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+
+    # 1 hour in future
+    req = {**BASE_REQUEST, "departure_time": "2026-10-26T16:00:00"}
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 200
+
+
+def test_future_date_accepted(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    mock_now = datetime(2026, 10, 26, 15, 0, 0, tzinfo=ist)
+    monkeypatch.setattr("api.schemas.get_current_ist_time", lambda: mock_now)
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+
+    req = {**BASE_REQUEST, "departure_time": "2026-10-30T10:00:00"}
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 200
+
+
+def test_timezone_handled_utc_to_ist(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    # Current time: 2026-10-26 15:00:00 IST = 2026-10-26 09:30:00 UTC
+    mock_now = datetime(2026, 10, 26, 15, 0, 0, tzinfo=ist)
+    monkeypatch.setattr("api.schemas.get_current_ist_time", lambda: mock_now)
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+
+    # 10:00:00 UTC = 15:30:00 IST (future in IST) -> Accepted
+    req_future_utc = {**BASE_REQUEST, "departure_time": "2026-10-26T10:00:00Z"}
+    resp_future = client.post("/optimize", json=req_future_utc)
+    assert resp_future.status_code == 200
+
+    # 08:00:00 UTC = 13:30:00 IST (past in IST) -> Rejected
+    req_past_utc = {**BASE_REQUEST, "departure_time": "2026-10-26T08:00:00Z"}
+    resp_past = client.post("/optimize", json=req_past_utc)
+    assert resp_past.status_code == 422
+    assert "departure_time cannot be in the past" in resp_past.text
+
+
+def test_grace_period_accepted(monkeypatch):
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    mock_now = datetime(2026, 10, 26, 15, 0, 0, tzinfo=ist)
+    monkeypatch.setattr("api.schemas.get_current_ist_time", lambda: mock_now)
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+
+    # 3 minutes in past (within 5-min grace window)
+    req = {**BASE_REQUEST, "departure_time": "2026-10-26T14:57:00"}
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 200
