@@ -71,4 +71,59 @@ def test_app_test_initial_load():
     ]
 
 
+def test_depot_payload_strictly_follows_selected_start():
+    """Regression test: for each city, selecting 3 different starts produces an optimize
+
+    payload whose depot lat/lon equals that gazetteer row exactly.
+    """
+    from frontend.app import build_default_applied_config, build_optimize_payload, get_depot_coords
+
+    city_samples = {
+        "Pune": ["Shivajinagar", "Kothrud", "Aundh"],
+        "PCMC": ["Hinjewadi", "Chinchwad", "Wakad"],
+    }
+
+    base_config = build_default_applied_config()
+
+    for city, starts in city_samples.items():
+        payloads = []
+        for start in starts:
+            assert start in GAZETTEER, f"{start} missing from GAZETTEER"
+            assert GAZETTEER[start]["city"] == city, f"{start} expected to be in {city}"
+
+            cfg = dict(base_config)
+            cfg["start_location"] = start
+
+            # Direct helper verification
+            coords = get_depot_coords(start)
+            assert coords["lat"] == GAZETTEER[start]["lat"]
+            assert coords["lon"] == GAZETTEER[start]["lon"]
+
+            # Optimize payload builder verification
+            payload = build_optimize_payload(cfg)
+            assert payload["depot_lat"] == GAZETTEER[start]["lat"]
+            assert payload["depot_lon"] == GAZETTEER[start]["lon"]
+            payloads.append(payload)
+
+        # Assert payload depot coordinates change when start changes
+        assert (payloads[0]["depot_lat"], payloads[0]["depot_lon"]) != (payloads[1]["depot_lat"], payloads[1]["depot_lon"])
+        assert (payloads[1]["depot_lat"], payloads[1]["depot_lon"]) != (payloads[2]["depot_lat"], payloads[2]["depot_lon"])
+        assert (payloads[0]["depot_lat"], payloads[0]["depot_lon"]) != (payloads[2]["depot_lat"], payloads[2]["depot_lon"])
+
+
+def test_app_test_select_starting_location():
+    """Test that changing start location in AppTest updates selectbox without exceptions."""
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+
+    app_path = Path(__file__).resolve().parent.parent / "frontend" / "app.py"
+    at = AppTest.from_file(str(app_path)).run()
+    assert not at.exception
+
+    # Select a different starting location (PCMC)
+    at.selectbox(key="start_loc_key").select("Hinjewadi").run()
+    assert not at.exception
+    assert at.selectbox(key="start_loc_key").value == "Hinjewadi"
+
+
 

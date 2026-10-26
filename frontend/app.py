@@ -151,15 +151,23 @@ def build_default_stops_list(stop_ids: list[str]) -> list[dict]:
     return out
 
 
+def get_depot_coords(start_name: str) -> dict[str, float]:
+    """Retrieve authoritative coordinates for a starting location from the gazetteer."""
+    loc = GAZETTEER.get(start_name)
+    if loc is not None:
+        return {"lat": float(loc["lat"]), "lon": float(loc["lon"])}
+    return {"lat": 18.5204, "lon": 73.8567}
+
+
 def build_default_applied_config() -> dict:
     d_date, d_time = get_default_ist_departure()
     start_loc = DEFAULTS["start_location"]
-    depot_data = GAZETTEER.get(start_loc, {"lat": 18.5204, "lon": 73.8567, "city": "Pune"})
+    depot_coords = get_depot_coords(start_loc)
     dep_iso = f"{d_date.isoformat()}T{d_time.strftime('%H:%M:%S')}"
     return {
         "start_location": start_loc,
-        "depot_lat": float(depot_data["lat"]),
-        "depot_lon": float(depot_data["lon"]),
+        "depot_lat": depot_coords["lat"],
+        "depot_lon": depot_coords["lon"],
         "departure_date": d_date,
         "departure_time": d_time,
         "departure_iso": dep_iso,
@@ -173,6 +181,22 @@ def build_default_applied_config() -> dict:
         "city_type": DEFAULTS["city_type"],
         "algorithm": DEFAULTS["algorithm"],
         "stops": build_default_stops_list(DEFAULTS["stops"]),
+    }
+
+
+def build_optimize_payload(applied_cfg: dict) -> dict:
+    """Build optimize API payload with depot lat/lon derived strictly from GAZETTEER."""
+    start_loc = applied_cfg.get("start_location", DEFAULTS["start_location"])
+    coords = get_depot_coords(start_loc)
+    return {
+        "depot_lat": coords["lat"],
+        "depot_lon": coords["lon"],
+        "rider": applied_cfg["rider"],
+        "festival": applied_cfg["festival"],
+        "city_type": applied_cfg["city_type"],
+        "stops": applied_cfg["stops"],
+        "departure_time": applied_cfg["departure_iso"],
+        "algorithm": applied_cfg["algorithm"],
     }
 
 
@@ -277,26 +301,32 @@ def run_app():
         "XGBoost-based ETA prediction · Held-Karp exact solver · Hill Climbing heuristic"
     )
 
-    # ── Sidebar Form Wrapping All Controls ──────────────────────────────
+    # ── Starting Location (Outside Form for Instant Dependent Updates) ──
+    st.sidebar.subheader("📍 Starting Location (Depot)")
+    default_start_val = st.session_state.get("start_loc_key", DEFAULTS["start_location"])
+    start_idx = gazetteer_names.index(default_start_val) if default_start_val in gazetteer_names else 0
+
+    start_location = st.sidebar.selectbox(
+        "Starting location",
+        options=gazetteer_names,
+        index=start_idx,
+        key="start_loc_key",
+        help="Select the depot / origin location (Node 0).",
+    )
+    depot_info = GAZETTEER[start_location]
+    st.sidebar.caption(f"Coordinates: `{depot_info['lat']:.4f}° N, {depot_info['lon']:.4f}° E` ({depot_info['city']})")
+
+    # Automatically keep applied_config start_location and its derived depot coordinates always up to date
+    cur_applied = st.session_state.get("applied_config")
+    if cur_applied and cur_applied.get("start_location") != start_location:
+        cur_applied["start_location"] = start_location
+        cur_applied["depot_lat"] = float(depot_info["lat"])
+        cur_applied["depot_lon"] = float(depot_info["lon"])
+
+    st.sidebar.divider()
+
+    # ── Sidebar Form Wrapping Route & Filter Controls ──────────────────
     with st.sidebar.form("config_form"):
-        st.subheader("📍 Starting Location (Depot)")
-        default_start_val = st.session_state.get("start_loc_key", DEFAULTS["start_location"])
-        start_idx = gazetteer_names.index(default_start_val) if default_start_val in gazetteer_names else 0
-
-        start_location = st.selectbox(
-            "Starting location",
-            options=gazetteer_names,
-            index=start_idx,
-            key="start_loc_key",
-            help="Select the depot / origin location (Node 0).",
-        )
-        depot_info = GAZETTEER[start_location]
-        depot_lat = float(depot_info["lat"])
-        depot_lon = float(depot_info["lon"])
-        st.caption(f"Coordinates: `{depot_lat:.4f}° N, {depot_lon:.4f}° E` ({depot_info['city']})")
-
-        st.divider()
-
         st.subheader("⏰ Departure Time (IST)")
         now_ist = datetime.now(IST_ZONE)
         def_date, def_time = get_default_ist_departure()
@@ -474,10 +504,11 @@ def run_app():
                 })
 
             departure_iso = f"{dep_date.isoformat()}T{dep_time.strftime('%H:%M:%S')}"
+            depot_coords = get_depot_coords(start_location)
             st.session_state["applied_config"] = {
                 "start_location": start_location,
-                "depot_lat": depot_lat,
-                "depot_lon": depot_lon,
+                "depot_lat": depot_coords["lat"],
+                "depot_lon": depot_coords["lon"],
                 "departure_date": dep_date,
                 "departure_time": dep_time,
                 "departure_iso": departure_iso,
@@ -569,16 +600,7 @@ def run_app():
                 )
 
         if clicked:
-            current_payload = {
-                "depot_lat":      float(applied_cfg["depot_lat"]),
-                "depot_lon":      float(applied_cfg["depot_lon"]),
-                "rider":          applied_cfg["rider"],
-                "festival":       applied_cfg["festival"],
-                "city_type":      applied_cfg["city_type"],
-                "stops":          applied_cfg["stops"],
-                "departure_time": applied_cfg["departure_iso"],
-                "algorithm":      applied_cfg["algorithm"],
-            }
+            current_payload = build_optimize_payload(applied_cfg)
             with st.spinner("Running ETA prediction & route optimization…"):
                 try:
                     resp = requests.post(
@@ -590,7 +612,6 @@ def run_app():
                         st.session_state["optimize_result"] = resp.json()
                         st.session_state["last_optimized_payload"] = current_payload
                         st.session_state["last_optimized_config"] = copy.deepcopy(applied_cfg)
-                        st.session_state["last_depot"] = {"lat": float(applied_cfg["depot_lat"]), "lon": float(applied_cfg["depot_lon"])}
                     elif resp.status_code == 422:
                         detail = resp.json().get("detail", resp.text)
                         errs = (
@@ -616,10 +637,9 @@ def run_app():
                 except requests.exceptions.RequestException as exc:
                     st.error(f"Request failed: {exc}")
 
-        last_depot = st.session_state.get(
-            "last_depot",
-            {"lat": float(applied_cfg.get("depot_lat", 18.5204)), "lon": float(applied_cfg.get("depot_lon", 73.8567))}
-        )
+        # Derive map depot strictly from last_optimized_config if available, or applied_cfg
+        opt_cfg = st.session_state.get("last_optimized_config", applied_cfg)
+        map_depot_coords = get_depot_coords(opt_cfg.get("start_location", DEFAULTS["start_location"]))
 
         if result:
             st.divider()
@@ -659,7 +679,7 @@ def run_app():
             col_before, col_after = st.columns(2)
             with col_before:
                 st.subheader("Before: Baseline Route")
-                m_before = build_map(last_depot, stops_coords, result["baseline_route"], color="#757575")
+                m_before = build_map(map_depot_coords, stops_coords, result["baseline_route"], color="#757575")
                 st_folium(
                     m_before,
                     width=None, height=420,
@@ -669,7 +689,7 @@ def run_app():
                 )
             with col_after:
                 st.subheader("After: Optimized Route")
-                m_after = build_map(last_depot, stops_coords, result["route"], color="#2E7D32")
+                m_after = build_map(map_depot_coords, stops_coords, result["route"], color="#2E7D32")
                 st_folium(
                     m_after,
                     width=None, height=420,
