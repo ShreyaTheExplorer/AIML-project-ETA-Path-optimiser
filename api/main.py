@@ -41,6 +41,26 @@ def optimize(request: OptimizeRequest):
             ],
         ]
 
+        # Validate city consistency if city_key is specified
+        city_key = request.city_key.strip().lower() if request.city_key else None
+        if city_key:
+            from data.loader import get_city_metadata, validate_coordinates_for_city, resolve_context
+            city_meta = get_city_metadata(city_key)
+            depot_coords = (request.depot_lat, request.depot_lon)
+            stop_coords = [(s.id, s.lat, s.lon) for s in request.stops]
+            violations = validate_coordinates_for_city(city_key, depot_coords, stop_coords)
+            if violations:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Coordinates inconsistent with city '{city_meta['display_name']}': " + "; ".join(violations),
+                )
+            context = resolve_context(city_key, request.departure_time)
+            resolved_city_type = context["city_type"]
+            resolved_festival = context["festival"] if request.festival == "No" else request.festival
+        else:
+            resolved_city_type = request.city_type
+            resolved_festival = request.festival
+
         clipped_legs = find_clipped_legs(coordinates)
         # The depot does not represent a delivery destination,
         # so it does not need delivery-specific model context.
@@ -76,8 +96,8 @@ def optimize(request: OptimizeRequest):
                     "multiple_deliveries": stop.multiple_deliveries,
 
                     # Route-level context
-                    "festival": request.festival,
-                    "city_type": request.city_type,
+                    "festival": resolved_festival,
+                    "city_type": resolved_city_type,
                 }
                 for stop in request.stops
             ],
@@ -223,6 +243,9 @@ def optimize(request: OptimizeRequest):
            },
            
         }
+
+    except HTTPException:
+        raise
 
     except ValueError as exc:
         raise HTTPException(

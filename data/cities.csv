@@ -1,0 +1,5 @@
+city_key,display_name,state,city_type,default_start,center_lat,center_lon,map_zoom,service_radius_km
+pune,Pune,Maharashtra,Metropolitan,Shivajinagar,18.5204,73.8567,12,25
+mumbai,Mumbai,Maharashtra,Metropolitan,Dadar,19.0178,72.8478,12,25
+bengaluru,Bengaluru,Karnataka,Metropolitan,Indiranagar,12.9716,77.5946,12,25
+delhi,Delhi,Delhi,Metropolitan,Connaught Place,28.6315,77.2167,12,25

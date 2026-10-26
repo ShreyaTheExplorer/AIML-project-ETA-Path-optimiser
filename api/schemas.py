@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Literal, Optional
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -138,6 +138,11 @@ class OptimizeRequest(BaseModel):
     festival: Festival = "No"
 
     city_type: CityType = "Metropolitan"
+
+    city_key: Optional[str] = Field(
+        default=None,
+        description="Optional city key (pune, mumbai, bengaluru, delhi).",
+    )
 
     stops: list[Stop] = Field(
         min_length=1,

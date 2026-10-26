@@ -1,0 +1,15 @@
+date,festival_name,region,verified
+2026-01-26,Republic Day,national,true
+2026-03-04,Holi,national,false
+2026-03-20,Gudi Padwa,Maharashtra,false
+2026-03-20,Ugadi,Karnataka,false
+2026-05-01,Maharashtra Day,Maharashtra,true
+2026-08-15,Independence Day,national,true
+2026-08-28,Raksha Bandhan,national,false
+2026-09-04,Janmashtami,national,false
+2026-09-14,Ganesh Chaturthi,Maharashtra,false
+2026-10-02,Gandhi Jayanti,national,true
+2026-10-20,Dussehra,national,false
+2026-11-01,Kannada Rajyotsava,Karnataka,true
+2026-11-08,Diwali,national,false
+2026-12-25,Christmas,national,true

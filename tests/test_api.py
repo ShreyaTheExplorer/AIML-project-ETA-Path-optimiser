@@ -469,4 +469,57 @@ def test_grace_period_accepted(monkeypatch):
     # 3 minutes in past (within 5-min grace window)
     req = {**BASE_REQUEST, "departure_time": "2026-10-26T14:57:00"}
     resp = client.post("/optimize", json=req)
-    assert resp.status_code == 200
+    assert resp.status_code == 200
+
+
+def test_inconsistent_city_coordinates_rejected_with_422(monkeypatch):
+    """API must reject coordinates exceeding service radius from city center with 422."""
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+    # BASE_REQUEST has Pune coordinates (18.5204, 73.8567), but city_key is set to bengaluru
+    req = {
+        **BASE_REQUEST,
+        "city_key": "bengaluru",
+    }
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 422
+    assert "Coordinates inconsistent with city 'Bengaluru'" in resp.text
+    assert "exceeding the service radius" in resp.text
+
+
+def test_valid_bengaluru_request_accepted(monkeypatch):
+    """Valid Bengaluru coordinates with city_key='bengaluru' should be accepted."""
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+    future_time = (datetime.now() + timedelta(days=2)).isoformat()
+    req = {
+        "city_key": "bengaluru",
+        "depot_lat": 12.9784,
+        "depot_lon": 77.6408,
+        "stops": [
+            {"id": "MG Road", "lat": 12.9756, "lon": 77.6066, "weather": "Sunny", "traffic": "Medium", "multiple_deliveries": 0},
+            {"id": "Koramangala", "lat": 12.9352, "lon": 77.6245, "weather": "Sunny", "traffic": "Medium", "multiple_deliveries": 0},
+        ],
+        "departure_time": future_time,
+        "algorithm": "held_karp",
+    }
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 200
+
+
+def test_valid_delhi_request_accepted(monkeypatch):
+    """Valid Delhi coordinates with city_key='delhi' should be accepted."""
+    monkeypatch.setattr("api.main.build_eta_matrix", fake_matrix_builder)
+    future_time = (datetime.now() + timedelta(days=2)).isoformat()
+    req = {
+        "city_key": "delhi",
+        "depot_lat": 28.6315,
+        "depot_lon": 77.2167,
+        "stops": [
+            {"id": "Karol Bagh", "lat": 28.6517, "lon": 77.1906, "weather": "Sunny", "traffic": "Medium", "multiple_deliveries": 0},
+            {"id": "Saket", "lat": 28.5244, "lon": 77.2167, "weather": "Sunny", "traffic": "Medium", "multiple_deliveries": 0},
+        ],
+        "departure_time": future_time,
+        "algorithm": "held_karp",
+    }
+    resp = client.post("/optimize", json=req)
+    assert resp.status_code == 200
+

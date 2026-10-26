@@ -119,11 +119,50 @@ def test_app_test_select_starting_location():
     app_path = Path(__file__).resolve().parent.parent / "frontend" / "app.py"
     at = AppTest.from_file(str(app_path)).run()
     assert not at.exception
+    assert at.selectbox(key="city_select_key").value == "bengaluru"
 
-    # Select a different starting location (PCMC)
-    at.selectbox(key="start_loc_key").select("Hinjewadi").run()
+    # Select a different starting location in Bengaluru
+    at.selectbox(key="start_loc_key").select("Koramangala").run()
     assert not at.exception
-    assert at.selectbox(key="start_loc_key").value == "Hinjewadi"
+    assert at.selectbox(key="start_loc_key").value == "Koramangala"
+
+
+def test_city_selector_switches_localities():
+    """Test that switching city in AppTest updates available start and stop localities."""
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+
+    app_path = Path(__file__).resolve().parent.parent / "frontend" / "app.py"
+    at = AppTest.from_file(str(app_path)).run()
+    assert not at.exception
+
+    # Switch city to Mumbai
+    at.selectbox(key="city_select_key").select("mumbai").run()
+    assert not at.exception
+    assert at.selectbox(key="city_select_key").value == "mumbai"
+    assert at.selectbox(key="start_loc_key").value == "Dadar"
+
+    # Verify options only contain Mumbai localities
+    start_options = at.selectbox(key="start_loc_key").options
+    assert "Dadar" in start_options
+    assert "Bandra West" in start_options
+    assert "Indiranagar" not in start_options
+    assert "Shivajinagar" not in start_options
+
+
+def test_gazetteer_loader_cities():
+    """Test data.loader city metadata and gazetteers."""
+    from data.loader import load_cities_data, load_all_gazetteers
+
+    cities = load_cities_data()
+    assert set(cities.keys()) == {"pune", "mumbai", "bengaluru", "delhi"}
+
+    gaz = load_all_gazetteers()
+    for ckey in ["pune", "mumbai", "bengaluru", "delhi"]:
+        assert len(gaz[ckey]) == 25, f"Expected 25 localities for {ckey}, got {len(gaz[ckey])}"
+        assert cities[ckey]["default_start"] in gaz[ckey]
+        assert cities[ckey]["city_type"] == "Metropolitan"
+
 
 
 
