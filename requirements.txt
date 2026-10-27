@@ -10,3 +10,5 @@ requests==2.34.2
 matplotlib==3.11.2
 seaborn==0.13.2
 pytest==9.1.1
+lightgbm
+optuna

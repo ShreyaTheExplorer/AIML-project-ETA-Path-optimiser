@@ -33,10 +33,11 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
-
+import optuna
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
+from lightgbm import LGBMRegressor
 from xgboost import XGBRegressor
 
 # Add project root to Python path
@@ -89,6 +90,18 @@ ML_MODELS = {
         objective="reg:squarederror",
         random_state=RANDOM_STATE,
         n_jobs=-1,
+    ),
+    "LightGBM": LGBMRegressor(
+        n_estimators=500,
+        learning_rate=0.05,
+        num_leaves=31,
+        max_depth=-1,
+        subsample=0.9,
+        subsample_freq=1,
+        colsample_bytree=0.9,
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+        verbosity=-1,
     ),
 }
 
@@ -231,7 +244,147 @@ def make_baseline_predictions(
     )
 
     return baseline_predictions
+# ============================================================
+# LIGHTGBM OPTIMIZATION
+# ============================================================
 
+def optimize_lightgbm(
+    X_train,
+    y_train,
+    X_validation,
+    y_validation,
+    delay_threshold,
+    n_trials=30,
+):
+    """
+    Optimize LightGBM hyperparameters using the existing
+    internal validation set.
+
+    The held-out test set is NOT used here.
+    Objective: minimize validation MAE.
+    """
+
+    print("\n")
+    print("=" * 70)
+    print("OPTIMIZING LIGHTGBM WITH OPTUNA")
+    print("=" * 70)
+
+    def objective(trial):
+
+        params = {
+            "n_estimators": trial.suggest_int(
+                "n_estimators",
+                300,
+                1200,
+            ),
+
+            "learning_rate": trial.suggest_float(
+                "learning_rate",
+                0.01,
+                0.10,
+                log=True,
+            ),
+
+            "num_leaves": trial.suggest_int(
+                "num_leaves",
+                15,
+                127,
+            ),
+
+            "max_depth": trial.suggest_int(
+                "max_depth",
+                3,
+                12,
+            ),
+
+            "min_child_samples": trial.suggest_int(
+                "min_child_samples",
+                5,
+                50,
+            ),
+
+            "subsample": trial.suggest_float(
+                "subsample",
+                0.70,
+                1.00,
+            ),
+
+            "subsample_freq": 1,
+
+            "colsample_bytree": trial.suggest_float(
+                "colsample_bytree",
+                0.70,
+                1.00,
+            ),
+
+            "reg_alpha": trial.suggest_float(
+                "reg_alpha",
+                0.0,
+                1.0,
+            ),
+
+            "reg_lambda": trial.suggest_float(
+                "reg_lambda",
+                0.0,
+                5.0,
+            ),
+
+            "random_state": RANDOM_STATE,
+            "n_jobs": -1,
+            "verbosity": -1,
+        }
+
+        model = LGBMRegressor(**params)
+
+        model.fit(
+            X_train,
+            y_train,
+        )
+
+        predictions = model.predict(
+            X_validation
+        )
+
+        metrics = evaluate_predictions(
+            y_validation,
+            predictions,
+            threshold=delay_threshold,
+        )
+
+        return metrics["mae"]
+
+    # --------------------------------------------------------
+    # Create Optuna study
+    # --------------------------------------------------------
+
+    study = optuna.create_study(
+        direction="minimize",
+        study_name="lightgbm_eta_optimization",
+    )
+
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        show_progress_bar=True,
+    )
+
+    print("\n")
+    print("=" * 70)
+    print("OPTUNA OPTIMIZATION COMPLETED")
+    print("=" * 70)
+
+    print(f"Number of trials: {n_trials}")
+    print(
+        f"Best validation MAE: "
+        f"{study.best_value:.4f} minutes"
+    )
+
+    print("\nBest LightGBM parameters:")
+
+    for parameter, value in study.best_params.items():
+        print(f"  {parameter}: {value}")
+
+    return study
 
 # ============================================================
 # MAIN TRAINING PIPELINE
@@ -427,6 +580,27 @@ def main():
                     model.learning_rate,
                 )
 
+            elif model_name == "LightGBM":
+                mlflow.log_param(
+                    "n_estimators",
+                    model.n_estimators,
+                )
+
+                mlflow.log_param(
+                    "num_leaves",
+                    model.num_leaves,
+                )
+
+                mlflow.log_param(
+                    "max_depth",
+                    model.max_depth,
+                )
+
+                mlflow.log_param(
+                    "learning_rate",
+                    model.learning_rate,
+                )
+
             log_metrics_to_mlflow(
                 metrics,
                 prefix="val_",
@@ -493,6 +667,138 @@ def main():
     print("\nBest ML model based on validation MAE:")
     print(f"  {best_model_name}")
     print(f"  Validation MAE: {best_validation_mae:.4f} minutes")
+      # ========================================================
+    # LIGHTGBM OPTIMIZATION
+    # ========================================================
+
+    if best_model_name != "LightGBM":
+        raise RuntimeError(
+            f"Expected LightGBM to be selected for optimization, "
+            f"but {best_model_name} won."
+        )
+
+    # --------------------------------------------------------
+    # BEFORE optimization
+    # --------------------------------------------------------
+
+    lightgbm_before = validation_results["LightGBM"]
+
+    # --------------------------------------------------------
+    # Run Optuna optimization
+    # --------------------------------------------------------
+
+    study = optimize_lightgbm(
+        X_train,
+        y_train,
+        X_validation,
+        y_validation,
+        delay_threshold,
+        n_trials=30,
+    )
+
+    # --------------------------------------------------------
+    # Build optimized LightGBM
+    # --------------------------------------------------------
+
+    optimized_params = study.best_params.copy()
+
+    optimized_params.update({
+        "random_state": RANDOM_STATE,
+        "n_jobs": -1,
+        "verbosity": -1,
+        "subsample_freq": 1,
+    })
+
+    optimized_lightgbm = LGBMRegressor(
+        **optimized_params
+    )
+
+    optimized_lightgbm.fit(
+        X_train,
+        y_train
+    )
+
+    optimized_predictions = optimized_lightgbm.predict(
+        X_validation
+    )
+
+    lightgbm_after = evaluate_predictions(
+        y_validation,
+        optimized_predictions,
+        threshold=delay_threshold,
+    )
+
+    # --------------------------------------------------------
+    # Calculate improvement
+    # --------------------------------------------------------
+
+    mae_improvement = (
+        (lightgbm_before["mae"] - lightgbm_after["mae"])
+        / lightgbm_before["mae"]
+    ) * 100
+
+    rmse_improvement = (
+        (lightgbm_before["rmse"] - lightgbm_after["rmse"])
+        / lightgbm_before["rmse"]
+    ) * 100
+
+    r2_improvement = (
+        lightgbm_after["r2"] - lightgbm_before["r2"]
+    ) * 100
+
+    print("\n")
+    print("=" * 70)
+    print("LIGHTGBM BEFORE vs AFTER OPTIMIZATION")
+    print("=" * 70)
+
+    print(
+        f"{'Metric':<25}"
+        f"{'Before':>12}"
+        f"{'After':>12}"
+        f"{'Change':>12}"
+    )
+
+    print("-" * 70)
+
+    print(
+        f"{'MAE (minutes)':<25}"
+        f"{lightgbm_before['mae']:>12.4f}"
+        f"{lightgbm_after['mae']:>12.4f}"
+        f"{mae_improvement:>11.2f}%"
+    )
+
+    print(
+        f"{'RMSE (minutes)':<25}"
+        f"{lightgbm_before['rmse']:>12.4f}"
+        f"{lightgbm_after['rmse']:>12.4f}"
+        f"{rmse_improvement:>11.2f}%"
+    )
+
+    print(
+        f"{'R² (%)':<25}"
+        f"{lightgbm_before['r2'] * 100:>12.2f}"
+        f"{lightgbm_after['r2'] * 100:>12.2f}"
+        f"{r2_improvement:>11.2f} pp"
+    )
+
+    print(
+        f"{'Delay Accuracy (%)':<25}"
+        f"{lightgbm_before['accuracy'] * 100:>12.2f}"
+        f"{lightgbm_after['accuracy'] * 100:>12.2f}"
+    )
+
+    print(
+        f"{'Delay F1 (%)':<25}"
+        f"{lightgbm_before['f1_score'] * 100:>12.2f}"
+        f"{lightgbm_after['f1_score'] * 100:>12.2f}"
+    )
+
+    print("-" * 70)
+
+    print("\nBest optimized parameters:")
+
+    for parameter, value in study.best_params.items():
+        print(f"  {parameter}: {value}")
 
     # --------------------------------------------------------
     # 5. RETRAIN SELECTED MODEL ON ALL TRAINING DATA
@@ -505,13 +811,15 @@ def main():
             "No ML model was selected."
         )
 
-    final_model = ML_MODELS[best_model_name]
+    final_model = LGBMRegressor(
+        **optimized_params
+    )
 
     final_model.fit(
         X,
         y,
     )
-
+    best_model_name = "Optimized LightGBM"
     # --------------------------------------------------------
     # 6. FINAL HELD-OUT TEST EVALUATION
     # --------------------------------------------------------
@@ -657,6 +965,9 @@ def main():
                 "xgboost.core.Booster",
                 "xgboost.sklearn.XGBRegressor",
                 "sklearn.ensemble._forest.RandomForestRegressor",
+                "lightgbm.sklearn.LGBMRegressor",
+                "collections.OrderedDict",
+                "lightgbm.basic.Booster",
             ],
         )
 
@@ -748,8 +1059,8 @@ def main():
     )
 
     report_lines.append(
-        f"Only the two ML models — **Random Forest** and "
-        f"**XGBoost** — were eligible for final model selection."
+       f"All three ML models — **Random Forest**, **XGBoost**, "
+    f"and **LightGBM** — were eligible for final model selection."
     )
 
     report_lines.append(
